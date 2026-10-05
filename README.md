@@ -1,4 +1,4 @@
-# Aprendizado contínuo em um sistema conversacional: proposta e comparação de estratégias
+# Atualização contínua de conhecimento em chatbots
 
 **Autora:** Mariana Reis
 
@@ -100,9 +100,38 @@ Antes de implementar a atualização, eu criaria um conjunto de perguntas revisa
 
 Uma atualização seria aprovada somente após análise conjunta dessas medidas. Como **exemplo de regra para um piloto**, eu exigiria ganho nos grupos alterado e novo, perda máxima previamente acordada no grupo estável e nenhuma elevação de respostas sem respaldo. Os limites numéricos dependeriam da linha de base e do risco do assunto; defini-los sem dados reais criaria uma precisão falsa. Depois dos testes, a publicação seria gradual e acompanhada de monitoramento, com retorno à versão anterior se o desempenho piorasse.
 
-## 3. Conclusão e esforço de implementação
+## 3. Protótipo comparativo
 
-Na minha avaliação, o ponto mais importante da proposta é não confundir “receber dados novos” com “aprender corretamente”. O artigo de Jang et al. (2022) mostra por que ganhar conhecimento recente e preservar o antigo precisam ser avaliados juntos. A comparação entre métodos também mudou minha escolha inicial: usar apenas exemplos históricos no treinamento parece simples, mas não foi suficiente no experimento analisado. Eu começaria atualizando fontes verificadas e medindo o resultado; se o modelo continuasse errando de forma recorrente, avaliaria uma atualização com adaptadores.
+Para observar a diferença entre atualização de parâmetros e consulta a fontes externas, preparei o protótipo [`src/fact_update_demo.py`](src/fact_update_demo.py). Ele simula perguntas sobre o canal de atendimento de 40 serviços fictícios. Entre duas versões dos dados, 20 respostas permanecem corretas, 10 mudam e 10 serviços aparecem pela primeira vez. Cada serviço possui seis formulações para treinamento e três formulações diferentes para teste.
+
+O teste usa um classificador de respostas com atributos de caracteres e atualização incremental. Ele compara quatro condições sobre as mesmas perguntas: modelo estático, modelo atualizado só com dados recentes, modelo atualizado com dados recentes e repetição de exemplos antigos (*replay*) e busca textual em documentos da versão atual. A última condição atualiza a informação externa sem treinar os parâmetros do classificador. O código executa cinco sementes (`31` a `35`) e informa a média das acurácias por grupo.
+
+| Condição, com 512 atributos | Estável ↑ | Alterado ↑ | Novo ↑ |
+| --- | ---: | ---: | ---: |
+| Modelo estático | 0,993 | 0,007 | 0,313 |
+| Atualização só com dados recentes | 0,953 | 0,834 | 0,960 |
+| Atualização com *replay* | 0,967 | 0,807 | 0,953 |
+| Busca em documentos atualizados | 1,000 | 1,000 | 1,000 |
+
+![Acurácia por grupo e método no protótipo sintético](docs/comparacao_demo.svg)
+
+Nesse cenário, o modelo estático conservou os fatos antigos, mas errou quase todos os fatos alterados. A atualização com dados recentes corrigiu muitos casos alterados e novos, com alguma perda no grupo estável. O *replay* recuperou parte dessa perda (`0,967` contra `0,953`), mas teve resultado um pouco menor nos grupos alterado e novo. A busca obteve `1,000` nos três grupos porque os documentos sintéticos continham diretamente a resposta vigente e os nomes dos serviços eram fáceis de localizar. Esse resultado não deve ser interpretado como garantia de que um RAG real responderia perfeitamente.
+
+Para verificar se a conclusão dependia da capacidade do classificador, repeti o teste com `2.048` atributos. Nessa configuração, a atualização só com dados recentes obteve `1,000` no grupo estável, `0,980` no alterado e `1,000` no novo; com *replay*, obteve `1,000`, `0,973` e `1,000`, respectivamente. A diferença entre os métodos diminuiu. Assim, o protótipo mostra um **efeito dependente da capacidade e dos dados**, em vez de provar que *replay* sempre melhora o aprendizado.
+
+Os dados, as mudanças e as fontes foram criados para a demonstração; os rótulos corretos ficam disponíveis imediatamente. O protótipo testa a resposta **após** a mudança, mas não implementa a detecção de drift nem avalia um modelo de linguagem generativo. A avaliação de um assistente real exigiria perguntas autênticas, fontes com conflitos e revisão humana das respostas.
+
+Para reproduzir no PowerShell, na raiz do repositório:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe src\fact_update_demo.py --features 512 --seeds 31 32 33 34 35 --plot docs\comparacao_demo.svg
+```
+
+## 4. Conclusão e esforço de implementação
+
+Na minha avaliação, o ponto mais importante da proposta é não confundir “receber dados novos” com “aprender corretamente”. O artigo de Jang et al. (2022) mostra por que ganhar conhecimento recente e preservar o antigo precisam ser avaliados juntos. O protótipo acrescenta uma observação prática: repetir exemplos antigos ajudou um pouco no cenário de capacidade limitada, mas não foi a melhor opção em todas as medidas. Eu começaria atualizando fontes verificadas e medindo o resultado; se o modelo continuasse errando de forma recorrente, avaliaria uma atualização com adaptadores.
 
 O trabalho de implementação está menos no comando de treinamento e mais na preparação de dados confiáveis. É necessário registrar versões de fontes e respostas, obter correções humanas, separar conjuntos de teste, executar comparações justas e acompanhar a publicação. Conversas de usuários não deveriam virar exemplos de treinamento sem revisão, pois podem conter erros ou dados pessoais.
 
@@ -115,7 +144,7 @@ Para tornar o esforço concreto, considero um piloto em um assistente já existe
 | Publicar e acompanhar | Liberação gradual, alertas e reversão testada | 1 a 2 semanas |
 | **Piloto** | **Decisão baseada em resultados observados** | **6 a 10 semanas** |
 
-Essa estimativa não inclui construir o assistente do zero nem obter autorização para acessar dados indisponíveis. A proposta continua limitada enquanto não houver experimentos com interações reais e fontes do domínio escolhido. Sua contribuição é oferecer uma arquitetura, uma comparação fundamentada e um modo verificável de decidir quando cada atualização vale a pena.
+Essa estimativa não inclui construir o assistente do zero nem obter autorização para acessar dados indisponíveis. A proposta continua limitada enquanto não houver experimentos com interações reais e fontes do domínio escolhido. Sua contribuição é oferecer uma arquitetura, uma comparação fundamentada, um pequeno teste reproduzível e um modo verificável de decidir quando cada atualização vale a pena.
 
 ## Referências bibliográficas
 
