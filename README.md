@@ -1,4 +1,4 @@
-# Proposta de aprendizado contínuo para o sistema conversacional de gestão de portfólio
+# Proposta de aprendizado contínuo para um sistema conversacional
 
 **Autora:** Mariana Reis
 
@@ -6,62 +6,70 @@
 
 ## 1. Introdução
 
-O sistema conversacional desenvolvido para apoiar a gestão do portfólio de projetos do Metrô de São Paulo recebe perguntas em linguagem natural e identifica a intenção do usuário antes de encaminhar a solicitação. O projeto já possui um classificador de intenções treinado com um conjunto de exemplos e uma rotina de avaliação. Porém, um modelo treinado em um conjunto fixo representa o vocabulário e os padrões de solicitação conhecidos naquele momento. Novos processos, tipos de consulta e formas de expressão podem surgir durante o uso do sistema.
+Um sistema conversacional pode responder corretamente no momento em que é criado e, ainda assim, perder qualidade com o tempo. Novos assuntos aparecem, procedimentos mudam e informações antes válidas deixam de ser atuais. Como o conhecimento de um modelo de linguagem é aprendido a partir dos dados disponíveis durante seu treinamento, ele não incorpora automaticamente essas mudanças. Por exemplo, a resposta a uma pergunta sobre o prazo de inscrição de um serviço pode mudar de um ano para outro.
 
-Uma consequência possível é o *concept drift* (mudança de conceito): a relação entre as mensagens recebidas e as intenções corretas muda ao longo do tempo. Por exemplo, uma nova rotina de acompanhamento pode fazer com que mensagens antes interpretadas como consulta de status passem a exigir outra intenção. A mudança pode ocorrer gradualmente ou de forma abrupta, e o desempenho observado no treinamento deixa de representar o desempenho em produção (GAMA et al., 2014).
+Esse cenário se relaciona ao *concept drift*: a relação entre as entradas recebidas e as respostas esperadas se altera ao longo do tempo (GAMA et al., 2014). No exemplo do prazo, a pergunta pode continuar igual, mas a resposta correta muda. Uma queda na qualidade das respostas pode indicar essa mudança, embora também possa ter outras causas; por isso, ela precisa ser investigada.
 
-O aprendizado contínuo busca incorporar experiências novas sem perder a capacidade de lidar com situações anteriores. Esse cuidado é necessário porque treinar o classificador apenas com mensagens recentes pode provocar *esquecimento catastrófico*: melhora-se uma tarefa nova, mas piora-se o resultado em tarefas antigas (PARISI et al., 2019). Esta proposta descreve um ciclo controlado de monitoramento, revisão humana, atualização e avaliação do **classificador de intenções**. A atualização de documentos consultados pelo agente é uma atividade complementar; aqui, o objeto de aprendizado é o modelo que reconhece as intenções.
+O aprendizado contínuo procura atualizar um modelo à medida que surgem dados novos. A dificuldade é aprender informações recentes sem prejudicar conhecimentos anteriores que continuam corretos, problema conhecido como *esquecimento catastrófico* (PARISI et al., 2019). No artigo fornecido como material de apoio, Jang et al. (2022) propõem avaliar separadamente três resultados dessa atualização: **preservar conhecimentos invariáveis, corrigir conhecimentos desatualizados e adquirir conhecimentos novos**. Essa distinção orienta a proposta a seguir.
 
 ## 2. Solução proposta
+
+Proponho um ciclo periódico e controlado para atualizar o modelo de linguagem usado por um sistema conversacional. Interações que sugerem respostas desatualizadas seriam analisadas junto a fontes confiáveis e recentes. Uma equipe revisaria os exemplos, prepararia dados de atualização, treinaria uma versão candidata e a compararia com a versão em produção antes de publicá-la. O ciclo não depende de atualizar o modelo após cada conversa.
 
 ### 2.1. Diagrama de arquitetura
 
 ```mermaid
 flowchart TD
     U[Usuário] --> C[Sistema conversacional]
-    M[Modelo de intenções aprovado] --> C
+    M[Modelo aprovado] --> C
     C --> R[Registro de interações e feedback]
     R --> D[Monitoramento e investigação de drift]
-    D --> H[Curadoria e rotulagem humana]
-    H --> T[Treinamento com exemplos novos e históricos]
-    B[Base histórica revisada] --> T
+    D --> H[Curadoria humana]
+    F[Fontes confiáveis atualizadas] --> H
+    H --> N[Conjunto de dados revisado]
+    N --> T[Atualização do modelo]
+    B[Exemplos históricos válidos] --> T
     T --> A[Avaliação da versão candidata]
-    A --> G{Critérios de aprovação atendidos?}
+    A --> G{Critérios atendidos?}
     G -->|Sim| M
     G -->|Não| H
 ```
 
-O fluxo representa uma **proposta de evolução** do sistema, não uma afirmação de que todos esses módulos já estejam implementados. O modelo em produção só seria substituído após a avaliação da versão candidata.
+As setas representam o fluxo proposto de dados e decisões. O modelo aprovado permanece disponível enquanto uma nova versão é preparada e testada.
 
-### 2.2. Responsabilidades dos módulos
+### 2.2. Responsabilidades dos blocos
 
-| Módulo | Responsabilidade |
+| Bloco | Responsabilidade |
 | --- | --- |
-| Sistema conversacional | Receber a mensagem, usar o classificador aprovado e encaminhar a intenção identificada ao fluxo correspondente. |
-| Registro de interações e feedback | Armazenar, de forma controlada, a mensagem, a intenção prevista, a confiança e sinais de erro ou correção. Dados pessoais devem ser removidos ou minimizados antes do uso para treinamento. |
-| Monitoramento e investigação de drift | Acompanhar, por período e por intenção, a taxa de baixa confiança, as intenções não reconhecidas e os erros confirmados. Uma alteração nesses indicadores inicia uma investigação; isoladamente, ela não comprova drift. |
-| Curadoria e rotulagem humana | Revisar exemplos recentes, conferir se a intenção correta já existe no catálogo e corrigir os rótulos. Se houver uma intenção nova, atualizar o catálogo e o encaminhamento correspondente. |
-| Base histórica revisada | Manter exemplos antigos representativos e confiáveis para preservar o conhecimento já adquirido. |
-| Treinamento | Reajustar o classificador com exemplos recentes e históricos (*replay*), gerando uma versão candidata identificada por data e versão dos dados. |
-| Avaliação e aprovação | Comparar a candidata ao modelo atual em exemplos recentes e antigos, inspecionar erros por intenção e autorizar a publicação somente se os critérios definidos forem atendidos. |
-| Modelo aprovado | Servir as classificações em produção. A versão anterior fica disponível para retorno caso o desempenho real piore. |
+| Sistema conversacional | Receber perguntas e gerar respostas usando a versão aprovada do modelo. |
+| Registro de interações e feedback | Guardar amostras de perguntas, respostas e correções necessárias à análise. Antes de reutilizá-las, remover ou reduzir dados pessoais. |
+| Monitoramento e investigação de drift | Acompanhar erros confirmados, correções frequentes e assuntos novos. Sinalizar mudanças para revisão, sem considerar qualquer resposta ruim uma prova automática de drift. |
+| Fontes confiáveis atualizadas | Fornecer a versão vigente das informações que podem confirmar ou corrigir uma resposta. |
+| Curadoria humana | Verificar a fonte e classificar cada caso como conhecimento que deve permanecer, informação que precisa ser corrigida ou conhecimento novo. Descartar exemplos ambíguos ou incorretos. |
+| Conjunto de dados revisado | Reunir exemplos com perguntas, respostas esperadas, fonte e data de validade para treinamento e avaliação. |
+| Exemplos históricos válidos | Preservar casos antigos que continuam corretos para verificar regressões e, quando apropriado, compor parte do treinamento. |
+| Atualização do modelo | Produzir uma versão candidata a partir dos dados revisados. Um piloto pode comparar o ajuste de adaptadores com a mistura de exemplos novos e históricos, conforme os recursos disponíveis. |
+| Avaliação da versão candidata | Testar separadamente a preservação de fatos estáveis, a correção de fatos alterados e a aprendizagem de fatos novos. Rejeitar versões que causem perda inaceitável de qualidade. |
+| Modelo aprovado | Atender os usuários com a versão validada e permitir retorno à versão anterior caso surjam problemas após a publicação. |
 
-### 2.3. Ciclo de atualização e critérios de avaliação
+### 2.3. Como avaliar a atualização
 
-O primeiro passo seria criar uma amostra de interações revisadas por pessoas que conhecem o domínio do portfólio. Mensagens com baixa confiança, intenção não identificada ou correção do usuário teriam prioridade. A equipe examinaria esses casos em intervalos regulares e registraria a intenção esperada. Essa revisão é importante porque feedback bruto pode conter ruído: uma resposta inadequada também pode resultar de falha na fonte de dados ou na execução, mesmo quando a intenção foi classificada corretamente.
+A equipe manteria três grupos de perguntas com respostas verificadas. O primeiro reuniria fatos que continuam válidos; o segundo, perguntas cuja resposta correta mudou; o terceiro, assuntos que não estavam presentes na versão anterior. Essa divisão adapta à proposta as três categorias usadas por Jang et al. (2022). Por exemplo, em um atendimento genérico, um endereço de contato que permanece válido pertence ao primeiro grupo; uma regra alterada, ao segundo; e um serviço recém-criado, ao terceiro.
 
-Após a revisão, o treinamento reutilizaria parte dos exemplos históricos junto aos novos. A divisão entre treino e avaliação precisaria ser preservada: mensagens usadas para medir a qualidade da versão candidata não poderiam participar de seu treinamento. Para cada atualização, a equipe compararia a **macro-F1** e os erros por intenção nos casos antigos e recentes, além da taxa de rejeição por baixa confiança. A publicação só ocorreria se a nova versão melhorasse os casos recentes sem queda inaceitável nos casos antigos. Os limites numéricos devem ser definidos com a equipe responsável a partir da linha de base do sistema.
+Os exemplos reservados para avaliação não seriam usados no treinamento. A cada ciclo, a equipe compararia a versão candidata com a versão em produção quanto à correção factual das respostas nos três grupos, registrando também respostas sem fundamento e casos em que o sistema deveria declarar incerteza. Os limites de aprovação seriam definidos a partir de uma medição inicial. A nova versão só entraria em produção após revisão humana dos resultados; sua identificação e a versão dos dados seriam registradas para permitir auditoria e retorno à versão anterior.
 
-Um piloto poderia começar com poucas intenções que apresentem muitos exemplos corrigidos. A equipe registraria a versão do conjunto de dados, os resultados da avaliação e a decisão de publicar ou rejeitar o modelo. Esse histórico permitiria explicar uma mudança de comportamento e reverter uma atualização malsucedida.
+O artigo de Jang et al. (2022) mostra que aprender conhecimentos novos e preservar os antigos envolve uma troca difícil. Portanto, misturar exemplos históricos ou usar adaptadores são **estratégias a testar**, não garantias de que o esquecimento desaparecerá. Atualizar uma fonte externa de consulta pode ajudar a oferecer respostas recentes, mas, por si só, não demonstra que o conhecimento interno do modelo foi atualizado.
 
 ## 3. Conclusão
 
-Considero essa proposta adequada ao projeto porque parte de componentes que já existem, como o classificador de intenções e sua avaliação, e acrescenta um processo para aprender com o uso real do sistema. Na minha avaliação, a parte mais trabalhosa não é repetir o comando de treinamento: é obter exemplos confiáveis, revisar os rótulos e demonstrar que uma melhoria recente não prejudicou intenções antigas.
+Considero a proposta útil porque transforma a atualização do sistema em um processo verificável: antes de publicar uma versão, seria possível observar o que ela preservou, corrigiu e aprendeu. Para mim, a parte mais importante é a revisão dos dados por pessoas capazes de confirmar qual resposta está correta em cada momento. Sem essa etapa, o modelo pode aprender informações equivocadas com aparência de novidade.
 
-A implementação exigiria ampliar o registro e a análise das interações, criar um fluxo de curadoria, versionar dados e modelos e definir critérios de aprovação com pessoas do domínio. Eu começaria com um piloto manual e periódico, para medir o valor da atualização antes de automatizar o ciclo. Assim, o sistema poderia acompanhar mudanças nas solicitações mantendo controle sobre a qualidade das respostas.
+A implementação exigiria esforço para coletar e tratar interações, manter fontes confiáveis, preparar os três grupos de avaliação, executar o treinamento e acompanhar a versão publicada. Eu começaria com um piloto pequeno e periódico, em um conjunto limitado de assuntos, para medir o benefício real antes de ampliar ou automatizar o processo.
 
 ## Referências bibliográficas
 
-GAMA, João et al. A survey on concept drift adaptation. **ACM Computing Surveys**, New York, v. 46, n. 4, art. 44, p. 1-37, 2014. DOI: 10.1145/2523813. Disponível em: https://doi.org/10.1145/2523813. Acesso em: 2 out. 2026.
+GAMA, João et al. A survey on concept drift adaptation. **ACM Computing Surveys**, New York, v. 46, n. 4, art. 44, p. 1-37, 2014. DOI: 10.1145/2523813. Disponível em: https://doi.org/10.1145/2523813. Acesso em: 4 out. 2026.
 
-PARISI, German I. et al. Continual lifelong learning with neural networks: a review. **Neural Networks**, Amsterdam, v. 113, p. 54-71, 2019. DOI: 10.1016/j.neunet.2019.01.012. Disponível em: https://doi.org/10.1016/j.neunet.2019.01.012. Acesso em: 2 out. 2026.
+JANG, Joel et al. Towards continual knowledge learning of language models. In: INTERNATIONAL CONFERENCE ON LEARNING REPRESENTATIONS, 2022. **Proceedings [...].** [S. l.]: ICLR, 2022. Disponível em: https://arxiv.org/abs/2110.03215. Acesso em: 4 out. 2026.
+
+PARISI, German I. et al. Continual lifelong learning with neural networks: a review. **Neural Networks**, Amsterdam, v. 113, p. 54-71, 2019. DOI: 10.1016/j.neunet.2019.01.012. Disponível em: https://doi.org/10.1016/j.neunet.2019.01.012. Acesso em: 4 out. 2026.
